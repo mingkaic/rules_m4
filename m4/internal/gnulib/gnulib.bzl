@@ -71,66 +71,6 @@ char *secure_getenv(char const *name);
 #endif
 """
 
-def gnulib_overlay(ctx, m4_version):
-    ctx.download_and_extract(
-        url = _GNULIB_URLS,
-        sha256 = _GNULIB_SHA256,
-        output = "gnulib",
-        stripPrefix = "gnulib-" + _GNULIB_VERSION,
-    )
-    ctx.symlink(ctx.attr._gnulib_build, "gnulib/BUILD.bazel")
-
-    config_header = _CONFIG_HEADER.format(
-        M4_VERSION = m4_version,
-    )
-    ctx.template("gnulib/config-darwin/config.h", ctx.attr._gnulib_config_darwin_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-    ctx.template("gnulib/config-linux/config.h", ctx.attr._gnulib_config_linux_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-    ctx.template("gnulib/config-windows/config.h", ctx.attr._gnulib_config_windows_h, substitutions = {
-        "{GNULIB_CONFIG_HEADER}": config_header,
-        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
-    }, executable = False)
-
-    for shim in _WINDOWS_STDLIB_SHIMS:
-        in_h = "gnulib/lib/{}.in.h".format(shim.replace("/", "_"))
-        out_h = "gnulib/config-windows/shim-libc/gnulib/{}.h".format(shim)
-        ctx.template(out_h, in_h, substitutions = _WINDOWS_AC_SUBST, executable = False)
-
-    # Older versions of M4 expect gnulib shims for exit() and strstr()
-    ctx.file("gnulib/lib/exit.h", "#include <stdlib.h>")
-    ctx.file("gnulib/lib/strstr.h", "#include <string.h>")
-
-    # gnulib inspects inner details of FILE* based on hard-coded structs defined
-    # for a handful of target platforms. Disable the whole mess so M4 can be
-    # built with musl libc.
-    #
-    # Context:
-    # * https://wiki.musl-libc.org/faq.html#Q:-I'm-getting-a-gnulib-error
-    # * https://github.com/jmillikin/rules_m4/issues/4
-    ctx.file("gnulib/lib/fpending.c", "#include <stdio.h>\nsize_t __fpending(FILE *fp) { return 1; }")
-    ctx.file("gnulib/lib/freadahead.c", "#include <stdio.h>\nsize_t freadahead(FILE *fp) { return 1; }")
-
-    # Stub out the sandbox-escaping charset alias loader.
-    ctx.template("gnulib/lib/localcharset.c", "gnulib/lib/localcharset.c", substitutions = {
-        "get_charset_aliases (void)": '''
-get_charset_aliases (void) { return ""; }
-#define LIBDIR ""
-static const char * _replaced_get_charset_aliases (void) _GL_UNUSED;
-static const char * _replaced_get_charset_aliases (void)
-''',
-    }, executable = False)
-
-    # Fix a mismatch between _Noreturn and __attribute_noreturn__ when
-    # building with a C11-aware GCC.
-    ctx.template("gnulib/lib/obstack.c", "gnulib/lib/obstack.c", substitutions = {
-        "static _Noreturn void": "static _Noreturn __attribute_noreturn__ void",
-    })
-
 _WINDOWS_STDLIB_SHIMS = [
     "alloca",
     "errno",
@@ -714,3 +654,63 @@ _WINDOWS_AC_SUBST = {
     "@GNULIB_WCTRANS@": "0",
     "@GNULIB_TOWCTRANS@": "0",
 }
+
+def gnulib_overlay(ctx, m4_version):
+    ctx.download_and_extract(
+        url = _GNULIB_URLS,
+        sha256 = _GNULIB_SHA256,
+        output = "gnulib",
+        stripPrefix = "gnulib-" + _GNULIB_VERSION,
+    )
+    ctx.symlink(ctx.attr._gnulib_build, "gnulib/BUILD.bazel")
+
+    config_header = _CONFIG_HEADER.format(
+        M4_VERSION = m4_version,
+    )
+    ctx.template("gnulib/config-darwin/config.h", ctx.attr._gnulib_config_darwin_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+    ctx.template("gnulib/config-linux/config.h", ctx.attr._gnulib_config_linux_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+    ctx.template("gnulib/config-windows/config.h", ctx.attr._gnulib_config_windows_h, substitutions = {
+        "{GNULIB_CONFIG_HEADER}": config_header,
+        "{GNULIB_CONFIG_FOOTER}": _CONFIG_FOOTER,
+    }, executable = False)
+
+    for shim in _WINDOWS_STDLIB_SHIMS:
+        in_h = "gnulib/lib/{}.in.h".format(shim.replace("/", "_"))
+        out_h = "gnulib/config-windows/shim-libc/gnulib/{}.h".format(shim)
+        ctx.template(out_h, in_h, substitutions = _WINDOWS_AC_SUBST, executable = False)
+
+    # Older versions of M4 expect gnulib shims for exit() and strstr()
+    ctx.file("gnulib/lib/exit.h", "#include <stdlib.h>")
+    ctx.file("gnulib/lib/strstr.h", "#include <string.h>")
+
+    # gnulib inspects inner details of FILE* based on hard-coded structs defined
+    # for a handful of target platforms. Disable the whole mess so M4 can be
+    # built with musl libc.
+    #
+    # Context:
+    # * https://wiki.musl-libc.org/faq.html#Q:-I'm-getting-a-gnulib-error
+    # * https://github.com/jmillikin/rules_m4/issues/4
+    ctx.file("gnulib/lib/fpending.c", "#include <stdio.h>\nsize_t __fpending(FILE *fp) { return 1; }")
+    ctx.file("gnulib/lib/freadahead.c", "#include <stdio.h>\nsize_t freadahead(FILE *fp) { return 1; }")
+
+    # Stub out the sandbox-escaping charset alias loader.
+    ctx.template("gnulib/lib/localcharset.c", "gnulib/lib/localcharset.c", substitutions = {
+        "get_charset_aliases (void)": '''
+get_charset_aliases (void) { return ""; }
+#define LIBDIR ""
+static const char * _replaced_get_charset_aliases (void) _GL_UNUSED;
+static const char * _replaced_get_charset_aliases (void)
+''',
+    }, executable = False)
+
+    # Fix a mismatch between _Noreturn and __attribute_noreturn__ when
+    # building with a C11-aware GCC.
+    ctx.template("gnulib/lib/obstack.c", "gnulib/lib/obstack.c", substitutions = {
+        "static _Noreturn void": "static _Noreturn __attribute_noreturn__ void",
+    })
